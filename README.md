@@ -19,9 +19,15 @@ Predicts which credit card customers will default next month, then scores every 
 | Threshold (validation-chosen) | 0.28 |
 | Confusion matrix [[TN FP],[FN TP]] | [[2985 519],[438 558]] |
 
+## Calibration
+Ranking customers well (ROC-AUC) is not the same as predicting the right default *rate*. The script also checks whether predicted probabilities match observed default rates on the test set:
+- **Brier score** vs. a base-rate model (always predict the training default rate)
+- **Expected calibration error** over 10 quantile bins
+- Mean predicted vs. observed default rate, and a calibration curve (`outputs/calibration_curve.png`)
+
 ## Run
 ```bash
 pip install pandas scikit-learn xgboost matplotlib
 python credit_card_default_project.py
 ```
-Outputs `outputs/metrics.txt`, ROC and confusion-matrix plots, and `scored_customers.csv` (risk band per customer).
+Outputs `outputs/metrics.txt` (including calibration), ROC, confusion-matrix and calibration plots, and `scored_customers.csv` (risk band per customer).

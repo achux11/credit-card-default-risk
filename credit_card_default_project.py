@@ -7,7 +7,7 @@ Run:  pip install pandas scikit-learn xgboost matplotlib
       python credit_card_default_project.py
 
 Outputs (in ./outputs):
-  metrics.txt, confusion_matrix.png, roc_curve.png,
+  metrics.txt (incl. calibration), confusion_matrix.png, roc_curve.png, calibration_curve.png,
   scored_customers.csv  (load this into Power BI for the dashboard)
 """
 import os
@@ -77,6 +77,33 @@ with open("outputs/metrics.txt", "w") as f:
     f.write(f"Best iteration: {model.best_iteration}\nThreshold (validation-chosen): {best_t:.2f}\n")
     f.write(f"TEST ROC-AUC: {auc:.3f}\nTEST AUCPR: {aucpr:.3f}\nTEST F1: {f1:.3f}\n")
     f.write(f"Confusion matrix [[TN FP],[FN TP]]:\n{cm}\n")
+
+# ---------- 6b. Calibration: do predicted probabilities match observed default rates? ----------
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
+
+brier = brier_score_loss(y_te, p_te)
+brier_base = brier_score_loss(y_te, np.full(len(y_te), y_tr.mean()))   # always predict the base rate
+frac_pos, mean_pred = calibration_curve(y_te, p_te, n_bins=10, strategy="quantile")
+bins = pd.qcut(p_te, 10, duplicates="drop")
+ece = (pd.DataFrame({"p": p_te, "y": y_te.to_numpy(), "b": bins})
+       .groupby("b", observed=True).agg(p=("p", "mean"), y=("y", "mean"), n=("y", "size"))
+       .eval("abs(p - y) * n").sum() / len(p_te))
+with open("outputs/metrics.txt", "a") as f:
+    f.write("\nCalibration (TEST)\n")
+    f.write(f"Brier score: {brier:.4f}  (base-rate model: {brier_base:.4f}, "
+            f"skill: {1 - brier / brier_base:.1%})\n")
+    f.write(f"Expected calibration error (10 quantile bins): {ece:.4f}\n")
+    f.write(f"Mean predicted default rate: {p_te.mean():.3%}  vs observed: {y_te.mean():.3%}\n")
+    f.write("Bin  mean_predicted  observed_rate\n")
+    for i, (mp, fp) in enumerate(zip(mean_pred, frac_pos), 1):
+        f.write(f"{i:>3}  {mp:14.3f}  {fp:13.3f}\n")
+plt.plot([0, 1], [0, 1], "--", color="gray", label="Perfectly calibrated")
+plt.plot(mean_pred, frac_pos, "o-", label="XGBoost (test)")
+plt.xlabel("Mean predicted default probability"); plt.ylabel("Observed default rate")
+plt.title("Calibration curve (test)"); plt.legend()
+plt.savefig("outputs/calibration_curve.png", dpi=150, bbox_inches="tight"); plt.close()
+
 print(open("outputs/metrics.txt").read())
 
 ConfusionMatrixDisplay(cm, display_labels=["Paid", "Default"]).plot(cmap="Blues")
